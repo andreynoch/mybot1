@@ -1,16 +1,18 @@
+import os
 import logging
-from telegram import Update
+from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove
 from telegram.ext import (
     ApplicationBuilder,
     CommandHandler,
     MessageHandler,
+    ConversationHandler,
     filters,
     ContextTypes,
 )
 
 # --- Настройки ---
-import os
-BOT_TOKEN = os.environ.get("BOT_TOKEN")  # Замените на токен от @BotFather
+BOT_TOKEN = os.environ.get("BOT_TOKEN")
+ADMIN_ID = 24761265  # ID администратора @Andreynoch
 
 # Логирование
 logging.basicConfig(
@@ -19,80 +21,138 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Шаги диалога
+CHOOSE_PROBLEM, GET_NAME, GET_PHONE, GET_DESCRIPTION = range(4)
 
-# --- Обработчики команд ---
+# Варианты проблем
+PROBLEMS = [
+    "1️⃣ Потерял доступ к кошельку",
+    "2️⃣ Заблокировала биржа",
+    "3️⃣ Отправил USDT не туда",
+    "4️⃣ Не получается войти на биржу",
+]
 
+
+# --- /start ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Команда /start — приветствие."""
+    keyboard = [[p] for p in PROBLEMS]
+    reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=True)
+
+    await update.message.reply_text(
+        "👋 Добро пожаловать в *CryptoRecoveryLab*!\n\n"
+        "Мы помогаем восстановить доступ к криптовалютным активам.\n\n"
+        "📋 Выберите вашу проблему:",
+        parse_mode="Markdown",
+        reply_markup=reply_markup,
+    )
+    return CHOOSE_PROBLEM
+
+
+# --- Шаг 1: Выбор проблемы ---
+async def choose_problem(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    text = update.message.text
+
+    if text not in PROBLEMS:
+        keyboard = [[p] for p in PROBLEMS]
+        reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=True)
+        await update.message.reply_text(
+            "Пожалуйста, выберите один из вариантов 👇",
+            reply_markup=reply_markup,
+        )
+        return CHOOSE_PROBLEM
+
+    context.user_data["problem"] = text
+    await update.message.reply_text(
+        "✅ Понял! Теперь введите ваше *имя*:",
+        parse_mode="Markdown",
+        reply_markup=ReplyKeyboardRemove(),
+    )
+    return GET_NAME
+
+
+# --- Шаг 2: Имя ---
+async def get_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    context.user_data["name"] = update.message.text
+    await update.message.reply_text(
+        "📱 Введите ваш *номер телефона* или другой способ связи:",
+        parse_mode="Markdown",
+    )
+    return GET_PHONE
+
+
+# --- Шаг 3: Телефон ---
+async def get_phone(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    context.user_data["phone"] = update.message.text
+    await update.message.reply_text(
+        "📝 Опишите вашу ситуацию подробнее (или напишите *—* если нечего добавить):",
+        parse_mode="Markdown",
+    )
+    return GET_DESCRIPTION
+
+
+# --- Шаг 4: Описание + отправка заявки ---
+async def get_description(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    context.user_data["description"] = update.message.text
+
     user = update.effective_user
+    data = context.user_data
+
+    # Сообщение пользователю
     await update.message.reply_text(
-        f"Привет, {user.first_name}! 👋\n"
-        "Я готов к работе. Напиши мне что-нибудь или используй /help."
+        "✅ *Ваша заявка принята!*\n\n"
+        "Наш специалист свяжется с вами в ближайшее время.\n\n"
+        "🌐 cryptorecoverylab.com",
+        parse_mode="Markdown",
     )
 
-
-async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Команда /help — список команд."""
-    await update.message.reply_text(
-        "Доступные команды:\n"
-        "/start — запустить бота\n"
-        "/help — список команд\n"
-        "/about — информация о боте\n\n"
-        "Или просто напиши мне что-нибудь — я отвечу!"
+    # Сообщение администратору
+    admin_message = (
+        "🔔 *Новая заявка!*\n\n"
+        f"👤 *Пользователь:* {user.full_name}\n"
+        f"🔗 *Username:* @{user.username if user.username else 'не указан'}\n"
+        f"🆔 *Telegram ID:* `{user.id}`\n\n"
+        f"❗ *Проблема:* {data.get('problem')}\n\n"
+        f"📛 *Имя:* {data.get('name')}\n"
+        f"📱 *Контакт:* {data.get('phone')}\n"
+        f"📝 *Описание:* {data.get('description')}\n"
     )
 
-
-async def about(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Команда /about — информация о боте."""
-    await update.message.reply_text(
-        "Я простой Telegram-бот, написанный на Python 🐍\n"
-        "Создан с помощью библиотеки python-telegram-bot."
+    await context.bot.send_message(
+        chat_id=ADMIN_ID,
+        text=admin_message,
+        parse_mode="Markdown",
     )
 
-
-# --- Обработчик обычных сообщений ---
-
-async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Отвечает на любое текстовое сообщение."""
-    text = update.message.text.lower()
-
-    # Простые ответы на ключевые слова
-    if any(word in text for word in ["привет", "хай", "hello", "hi"]):
-        reply = "Привет! Как дела? 😊"
-    elif any(word in text for word in ["как дела", "как ты", "what's up"]):
-        reply = "Всё отлично, спасибо! А у тебя? 😄"
-    elif any(word in text for word in ["пока", "до свидания", "bye"]):
-        reply = "До встречи! 👋"
-    elif any(word in text for word in ["спасибо", "благодарю", "thanks"]):
-        reply = "Пожалуйста! Рад помочь 🙌"
-    else:
-        reply = f'Ты написал: "{update.message.text}"\nЯ пока учусь отвечать на всё подряд 😅'
-
-    await update.message.reply_text(reply)
+    context.user_data.clear()
+    return ConversationHandler.END
 
 
-async def handle_unknown(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Реагирует на неизвестные команды."""
+# --- Отмена ---
+async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "Не знаю такой команды. Попробуй /help — там список всего, что я умею."
+        "❌ Заявка отменена. Напишите /start чтобы начать заново.",
+        reply_markup=ReplyKeyboardRemove(),
     )
+    context.user_data.clear()
+    return ConversationHandler.END
 
 
-# --- Запуск бота ---
-
+# --- Запуск ---
 def main():
     app = ApplicationBuilder().token(BOT_TOKEN).build()
 
-    # Регистрируем команды
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("help", help_command))
-    app.add_handler(CommandHandler("about", about))
+    conv_handler = ConversationHandler(
+        entry_points=[CommandHandler("start", start)],
+        states={
+            CHOOSE_PROBLEM: [MessageHandler(filters.TEXT & ~filters.COMMAND, choose_problem)],
+            GET_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_name)],
+            GET_PHONE: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_phone)],
+            GET_DESCRIPTION: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_description)],
+        },
+        fallbacks=[CommandHandler("cancel", cancel)],
+    )
 
-    # Обработчик текстовых сообщений (не команд)
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-
-    # Обработчик неизвестных команд
-    app.add_handler(MessageHandler(filters.COMMAND, handle_unknown))
+    app.add_handler(conv_handler)
 
     print("Бот запущен! Нажми Ctrl+C для остановки.")
     app.run_polling()
