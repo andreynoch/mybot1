@@ -9,7 +9,8 @@ from telegram.ext import (
 )
 
 # --- Настройки ---
-BOT_TOKEN = "ВАШ_ТОКЕН_ЗДЕСЬ"  # Замените на токен от @BotFather
+import os
+BOT_TOKEN = os.environ.get("BOT_TOKEN")  # Замените на токен от @BotFather
 
 # Логирование
 logging.basicConfig(
