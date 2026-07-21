@@ -1,5 +1,9 @@
+bash
+cat > /mnt/user-data/outputs/bot.py << 'EOF'
 import os
 import logging
+import threading
+from http.server import HTTPServer, BaseHTTPRequestHandler
 from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove
 from telegram.ext import (
     ApplicationBuilder,
@@ -12,19 +16,17 @@ from telegram.ext import (
 
 # --- Настройки ---
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
-ADMIN_ID = 24761265  # ID администратора @Andreynoch
+ADMIN_ID = 24761265
+PORT = int(os.environ.get("PORT", 8080))
 
-# Логирование
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     level=logging.INFO,
 )
 logger = logging.getLogger(__name__)
 
-# Шаги диалога
 CHOOSE_PROBLEM, GET_NAME, GET_PHONE, GET_DESCRIPTION = range(4)
 
-# Варианты проблем
 PROBLEMS = [
     "1️⃣ Потерял доступ к кошельку",
     "2️⃣ Заблокировала биржа",
@@ -32,12 +34,29 @@ PROBLEMS = [
     "4️⃣ Не получается войти на биржу",
 ]
 
+# --- Веб-сервер ---
+class HealthHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(b"OK - Bot is running!")
+    def log_message(self, format, *args):
+        pass
 
-# --- /start ---
+def run_health_server():
+    server = HTTPServer(("0.0.0.0", PORT), HealthHandler)
+    logger.info(f"Health server started on port {PORT}")
+    server.serve_forever()
+
+# Запускаем веб-сервер ПЕРВЫМ — до всего остального
+health_thread = threading.Thread(target=run_health_server, daemon=True)
+health_thread.start()
+logger.info("Health server thread started")
+
+# --- Обработчики бота ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [[p] for p in PROBLEMS]
     reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=True)
-
     await update.message.reply_text(
         "👋 Добро пожаловать в *CryptoRecoveryLab*!\n\n"
         "Мы помогаем восстановить доступ к криптовалютным активам.\n\n"
@@ -47,11 +66,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     return CHOOSE_PROBLEM
 
-
-# --- Шаг 1: Выбор проблемы ---
 async def choose_problem(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
-
     if text not in PROBLEMS:
         keyboard = [[p] for p in PROBLEMS]
         reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=True)
@@ -60,7 +76,6 @@ async def choose_problem(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup=reply_markup,
         )
         return CHOOSE_PROBLEM
-
     context.user_data["problem"] = text
     await update.message.reply_text(
         "✅ Понял! Теперь введите ваше *имя*:",
@@ -69,8 +84,6 @@ async def choose_problem(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     return GET_NAME
 
-
-# --- Шаг 2: Имя ---
 async def get_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["name"] = update.message.text
     await update.message.reply_text(
@@ -79,8 +92,6 @@ async def get_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     return GET_PHONE
 
-
-# --- Шаг 3: Телефон ---
 async def get_phone(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["phone"] = update.message.text
     await update.message.reply_text(
@@ -89,15 +100,11 @@ async def get_phone(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     return GET_DESCRIPTION
 
-
-# --- Шаг 4: Описание + отправка заявки ---
 async def get_description(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["description"] = update.message.text
-
     user = update.effective_user
     data = context.user_data
 
-    # Сообщение пользователю
     await update.message.reply_text(
         "✅ *Ваша заявка принята!*\n\n"
         "Наш специалист свяжется с вами в ближайшее время.\n\n"
@@ -105,7 +112,6 @@ async def get_description(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parse_mode="Markdown",
     )
 
-    # Сообщение администратору
     admin_message = (
         "🔔 *Новая заявка!*\n\n"
         f"👤 *Пользователь:* {user.full_name}\n"
@@ -122,12 +128,9 @@ async def get_description(update: Update, context: ContextTypes.DEFAULT_TYPE):
         text=admin_message,
         parse_mode="Markdown",
     )
-
     context.user_data.clear()
     return ConversationHandler.END
 
-
-# --- Отмена ---
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "❌ Заявка отменена. Напишите /start чтобы начать заново.",
@@ -136,11 +139,9 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data.clear()
     return ConversationHandler.END
 
-
 # --- Запуск ---
 def main():
     app = ApplicationBuilder().token(BOT_TOKEN).build()
-
     conv_handler = ConversationHandler(
         entry_points=[CommandHandler("start", start)],
         states={
@@ -151,12 +152,12 @@ def main():
         },
         fallbacks=[CommandHandler("cancel", cancel)],
     )
-
     app.add_handler(conv_handler)
-
     print("Бот запущен! Нажми Ctrl+C для остановки.")
     app.run_polling()
 
-
 if __name__ == "__main__":
     main()
+EOF
+Output
+exit code 0
