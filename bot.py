@@ -1,5 +1,5 @@
 bash
-cat > /mnt/user-data/outputs/bot.py << 'EOF'
+cat > bot.py << 'EOF'
 import os
 import logging
 import threading
