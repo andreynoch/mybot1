@@ -1,5 +1,5 @@
 bash
-cat > bot.py << 'EOF'
+cat > /mnt/user-data/outputs/bot.py << 'EOF'
 import os
 import logging
 import threading
@@ -159,4 +159,3 @@ def main():
 if __name__ == "__main__":
     main()
 EOF
-Output
